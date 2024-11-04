@@ -4,8 +4,9 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node dist/server.js",
-    "build": "tsc"
+    "build": "npx tsc",
+    "start": "node dist/index.js",
+    "dev": "nodemon index.ts"
   },
   "keywords": [],
   "author": "",
@@ -18,6 +19,9 @@
   },
   "dependencies": {
     "@truvity/sdk": "^0.28.5",
-    "express": "^4.21.1"
+    "@types/dotenv": "^8.2.3",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.1",
+    "nodemon": "^3.1.7"
   }
 }

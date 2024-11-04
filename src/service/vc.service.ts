@@ -1,5 +1,5 @@
 import { LinkedCredential, TruvityClient, VcClaim, VcContext, VcDecorator, VcLinkedCredentialClaim, VcNotEmptyClaim} from '@truvity/sdk';
-import { CredentialType, CredentialTypeMap, PassportRequest, PassportResponse, VcValidators } from './credentials';
+import { CredentialType, CredentialTypeMap, PassportRequest, PassportResponse, VcValidators } from '../credentials';
 import { Claims } from '@truvity/sdk/documents/types';
 
 const issuerClient = new TruvityClient({
@@ -37,7 +37,7 @@ async function getIssuerDid() {
     return await issuerClient.dids.didDocumentSelfGet();
 }
 
-async function requestVC<T extends CredentialType>(
+export async function requestVC<T extends CredentialType>(
     type: T,
     params: CredentialTypeMap[T]['params']
 ): Promise<void> {
@@ -77,7 +77,7 @@ async function requestVC<T extends CredentialType>(
     }
 }
 
-async function getUnfulfilledRequest<T extends CredentialType>(
+export async function getUnfulfilledRequest<T extends CredentialType>(
     type: T, request: VcDecorator<Claims>, response: VcDecorator<Claims>,
 ): Promise<any[]> {
 
@@ -126,7 +126,7 @@ async function getUnfulfilledRequest<T extends CredentialType>(
     return unfulfilledRequests;
 }
 
-async function issueCredential<T extends CredentialType>(
+export async function issueCredential<T extends CredentialType>(
     type: T, unfulfilledRequests: any[], keyId: string, request: VcDecorator<Claims>, response: VcDecorator<Claims>
 ): Promise<void> {
     // Processing new requests
@@ -152,7 +152,7 @@ async function issueCredential<T extends CredentialType>(
 
 }
 
-async function processCredentialRequest<T extends CredentialType>(
+export async function processCredentialRequest<T extends CredentialType>(
     type: T
 ): Promise<void>  {
     try {
@@ -214,6 +214,13 @@ async function processCredentialRequest<T extends CredentialType>(
 //     }
 }
 
+// Export types for use in other files
+export type {
+    CredentialClassMap,
+    CredentialType,
+    CredentialTypeMap
+};
+
 
 // requestVC('passport', {
 //     passportNumber: 'A123456',
@@ -221,7 +228,7 @@ async function processCredentialRequest<T extends CredentialType>(
 //     expiryDate: '2025-12-31'
 // });
 
-processCredentialRequest('passport');
+// processCredentialRequest('passport');
 
 
 
