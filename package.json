@@ -20,6 +20,7 @@
   "dependencies": {
     "@truvity/sdk": "^0.28.5",
     "@types/dotenv": "^8.2.3",
+    "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.1",
     "nodemon": "^3.1.7"

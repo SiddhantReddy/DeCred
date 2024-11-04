@@ -5,15 +5,35 @@ import { CredentialType } from '../credentials';
 interface SchemaRequestParams {
     type: CredentialType;
 }
-
 // Define available credential types
 export const ORGANISATION_TYPES = [
-    'Visa',
-    'Passport',
-    'EmployerContract',
-    'Identity',
-    'EmploymentContract',
-    'Municipality'
+    [
+        {
+          "id": "visa",
+          "name": "Visa Authority, India",
+          "type": "Government"
+        },
+        {
+          "id": "passport",
+          "name": "Passport Authority, India",
+          "type": "Government"
+        },
+        {
+            "id": "truvity",
+            "name": "Truvity",
+            "type": "Private"  
+          },
+          {
+            "id": "aadhar",
+            "name": "Aadhar authority, India",
+            "type": "Government" 
+          },
+          {
+            "id": "minicipality",
+            "name": "Municipality of Bengaluru, India",
+            "type": "Government" 
+          }
+      ]
 ] as const;
 
 export const schemaController = {
