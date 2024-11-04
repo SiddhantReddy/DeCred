@@ -24,6 +24,7 @@ coverage
 
 # Dependency directory
 node_modules
+did-truvity/node_modules
 bower_components
 
 # Editors
@@ -40,3 +41,4 @@ dist/**/*
 # ignore yarn.lock
 yarn.lock
 package-lock.json
+did-truvity/package-lock.json
