@@ -1,5 +1,6 @@
-import { LinkedCredential, TruvityClient, VcClaim, VcContext, VcLinkedCredentialClaim, VcNotEmptyClaim} from '@truvity/sdk';
+import { LinkedCredential, TruvityClient, VcClaim, VcContext, VcDecorator, VcLinkedCredentialClaim, VcNotEmptyClaim} from '@truvity/sdk';
 import { CredentialType, CredentialTypeMap, PassportRequest, PassportResponse, VcValidators } from './credentials';
+import { Claims } from '@truvity/sdk/documents/types';
 
 const issuerClient = new TruvityClient({
     environment: "https://api.truvity.cloud",
@@ -188,68 +189,60 @@ async function requestVC<T extends CredentialType>(
     }
 }
 
-async function main<T extends CredentialType>(
-    type: T
-): Promise<void>  {
-    try {
-        // --- Issuer handles request ---
+async function getUnfulfilledRequest<T extends CredentialType>(
+    type: T, request: VcDecorator<Claims>, response: VcDecorator<Claims>,
+): Promise<any[]> {
 
-        const credentialClassRequest = credentialClassMapRequest[type];
-        const credentialClassResponse = credentialClassMapResponse[type];
-
-        // Instantiating document APIs
-        const request = issuerClient.createVcDecorator(credentialClassRequest);
-        const purchasedTicked = issuerClient.createVcDecorator(PurchasedTicked);
-        const response = issuerClient.createVcDecorator(credentialClassResponse);
-
-        // Generate key and issue VC
-        const issuerKey = await generateKey(issuerClient);
-        console.log('Issuer key generated:', issuerKey.id);
-
-        // Searching for tickets purchase request VCs
-        const purchaseRequestResults = await issuerClient.credentials.credentialSearch({
-            filter: [
-                {
-                    data: {
-                        type: {
-                            operator: 'IN',
-                            values: [request.getCredentialTerm()],
-                        },
+    // Searching for tickets purchase request VCs
+    const purchaseRequestResults = await issuerClient.credentials.credentialSearch({
+        filter: [
+            {
+                data: {
+                    type: {
+                        operator: 'IN',
+                        values: [request.getCredentialTerm()],
                     },
                 },
-            ],
-        });
-        console.log('Purchase requests found:', purchaseRequestResults.items.length);
+            },
+        ],
+    });
+    console.log('Purchase requests found:', purchaseRequestResults.items.length);
 
-    // Searching for ticket purchase response VCs. We'll use it to calculate unprocessed requests
-        const fulfilledRequests = await issuerClient.credentials.credentialSearch({
-            filter: [
-                {
-                    data: {
-                        type: {
-                            operator: 'IN',
-                            values: [response.getCredentialTerm()],
-                        },
+// Searching for ticket purchase response VCs. We'll use it to calculate unprocessed requests
+    const fulfilledRequests = await issuerClient.credentials.credentialSearch({
+        filter: [
+            {
+                data: {
+                    type: {
+                        operator: 'IN',
+                        values: [response.getCredentialTerm()],
                     },
                 },
-            ],
-        });
-        console.log('Fulfilled requests found:', fulfilledRequests.items.length);
+            },
+        ],
+    });
+    console.log('Fulfilled requests found:', fulfilledRequests.items.length);
 
-        // Calculating unprocessed requests
-        const unfulfilledRequests = purchaseRequestResults.items.filter((request) => {
-            const { linkedId: requestLinkedId } = LinkedCredential.normalizeLinkedCredentialId(request.id);
+    // Calculating unprocessed requests
+    const unfulfilledRequests = purchaseRequestResults.items.filter((request) => {
+        const { linkedId: requestLinkedId } = LinkedCredential.normalizeLinkedCredentialId(request.id);
 
-            const isLinkedToResponse = fulfilledRequests.items.some((response) =>
-                response.data.linkedCredentials?.includes(requestLinkedId),
-            );
+        const isLinkedToResponse = fulfilledRequests.items.some((response) =>
+            response.data.linkedCredentials?.includes(requestLinkedId),
+        );
 
-            return !isLinkedToResponse;
-        });
-        console.log('Unfulfilled requests:', unfulfilledRequests.length);
+        return !isLinkedToResponse;
+    });
+    console.log('Unfulfilled requests:', unfulfilledRequests.length);
+    // console.log('Unfulfilled requests data :', unfulfilledRequests);
+    return unfulfilledRequests;
+}
 
-        // Processing new requests
-        for (const item of unfulfilledRequests) {
+async function issueCredential<T extends CredentialType>(
+    type: T, unfulfilledRequests: any[], keyId: string, request: VcDecorator<Claims>, response: VcDecorator<Claims>
+): Promise<void> {
+    // Processing new requests
+    for (const item of unfulfilledRequests) {
         // Converting API resource to UDT to enable additional API for working with the content of the VC
             const requestVC = request.map(item);
 
@@ -258,19 +251,40 @@ async function main<T extends CredentialType>(
                     request: requestVC,
                 },
             });
-            const responseVc = await responseDraft.issue(issuerKey.id);
-
-            const presentation = await issuerClient.createVpDecorator().issue([responseVc], issuerKey.id);
+            const responseVc = await responseDraft.issue(keyId);
+            const presentation = await issuerClient.createVpDecorator().issue([responseVc], keyId);
 
         // Retrieving information about the issuer of the request. We'll use to send the response back
             const { issuer: requesterDid } = await requestVC.getMetaData();
             console.log('Requester DID:', requesterDid);
 
-            await presentation.send(requesterDid, issuerKey.id);
+            await presentation.send(requesterDid, keyId);
             console.log('Response sent to:', requesterDid);
         }
+
+}
+
+async function processCredentialRequest<T extends CredentialType>(
+    type: T
+): Promise<void>  {
+    try {
+        // --- Issuer handles request ---
+        const credentialClassRequest = credentialClassMapRequest[type];
+        const credentialClassResponse = credentialClassMapResponse[type];
+
+        // Instantiating document APIs
+        const request = issuerClient.createVcDecorator(credentialClassRequest);
+        const response = issuerClient.createVcDecorator(credentialClassResponse);
+
+         // Generate key and issue VC
+        const issuerKey = await generateKey(issuerClient);
+        console.log('Issuer key generated:', issuerKey.id);
+
+        const unfulfilledRequests = await getUnfulfilledRequest(type, request, response);
+        issueCredential(type, unfulfilledRequests, issuerKey.id, request, response);
+
     } catch (error) {
-        console.error('Error during Airline handling request:', error);
+        console.error('Error during Issuer handling request:', error);
     }
 //     try {
 //         // Tim handles the received request
@@ -313,13 +327,13 @@ async function main<T extends CredentialType>(
 }
 
 
-requestVC('passport', {
-    passportNumber: 'A123456',
-    issuingCountry: 'USA',
-    expiryDate: '2025-12-31'
-});
+// requestVC('passport', {
+//     passportNumber: 'A123456',
+//     issuingCountry: 'USA',
+//     expiryDate: '2025-12-31'
+// });
 
-main('passport');
+processCredentialRequest('passport');
 
 
 
