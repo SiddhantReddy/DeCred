@@ -29,7 +29,27 @@ export const vcController = {
         try {
             const type = req.params.type as CredentialType;
             console.log("processCredentialRequest: Request type", type);
-            await processCredentialRequest(type);
+            await processCredentialRequest(type, null);
+            
+            res.status(200).json({
+                success: true,
+                message: `${type} credentials processed successfully`
+            });
+        } catch (error: any) {
+            res.status(400).json({
+                success: false,
+                message: error.message || `Error processing ${req.params.type} credentials`
+            });
+        }
+    },
+
+    // Process credential request by id
+    processCredentialRequestById: async (req: Request, res: Response) => {
+        try {
+            const type = req.params.type as CredentialType;
+            const id = req.params.id;
+            console.log("processCredentialRequestId: Request type and Id", type, id);
+            await processCredentialRequest(type, id);
             
             res.status(200).json({
                 success: true,
@@ -47,10 +67,9 @@ export const vcController = {
     getUnfulfilledRequests: async (req: Request, res: Response) => {
         try {
             const type = req.params.type as CredentialType;
-            const request = req.body.request;
-            const response = req.body.response;
+            const id = req.params.id;
             
-            const unfulfilledRequests = await getUnfulfilledRequest(type);
+            const unfulfilledRequests = await getUnfulfilledRequest(type, id);
             
             res.status(200).json({
                 success: true,

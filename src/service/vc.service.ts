@@ -80,7 +80,7 @@ export async function requestVC<T extends CredentialType>(
 }
 
 export async function getUnfulfilledRequest<T extends CredentialType>(
-    type: T
+    type: T, id: string 
 ): Promise<any[]> {
 
     // --- Issuer handles request ---
@@ -90,6 +90,9 @@ export async function getUnfulfilledRequest<T extends CredentialType>(
     // Instantiating document APIs
     const request = issuerClient.createVcDecorator(credentialClassRequest);
     const response = issuerClient.createVcDecorator(credentialClassResponse);
+
+    id = id ?? null;
+    console.log("unfulfilled Request :: ", id);
 
     // Searching for tickets purchase request VCs
     const purchaseRequestResults = await issuerClient.credentials.credentialSearch({
@@ -128,9 +131,19 @@ export async function getUnfulfilledRequest<T extends CredentialType>(
         const isLinkedToResponse = fulfilledRequests.items.some((response) =>
             response.data.linkedCredentials?.includes(requestLinkedId),
         );
-
         return !isLinkedToResponse;
     });
+
+    if( id !== null){
+        const unfulfilledRequestsById = unfulfilledRequests.filter((request) => {
+            const isIdMatched = request.id !== null && request.id === id;
+            console.log("isIdMatched :: ", isIdMatched);
+            return isIdMatched;
+        });
+        console.log('unfulfilledRequestsById requests:', unfulfilledRequestsById.length);
+        return unfulfilledRequestsById;
+    }
+    
     console.log('Unfulfilled requests:', unfulfilledRequests.length);
     // console.log('Unfulfilled requests data :', unfulfilledRequests);
     return unfulfilledRequests;
@@ -216,7 +229,7 @@ export async function getIssuedCredential<T extends CredentialType>(
 }
 
 export async function processCredentialRequest<T extends CredentialType>(
-    type: T
+    type: T, id: string
 ): Promise<void>  {
     try {
         // --- Issuer handles request ---
@@ -231,7 +244,7 @@ export async function processCredentialRequest<T extends CredentialType>(
         const issuerKey = await generateKey(issuerClient);
         console.log('Issuer key generated:', issuerKey.id);
 
-        const unfulfilledRequests = await getUnfulfilledRequest(type);
+        const unfulfilledRequests = await getUnfulfilledRequest(type, id);
         issueCredential(type, unfulfilledRequests, issuerKey.id, request, response);
 
     } catch (error) {
