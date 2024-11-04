@@ -1,4 +1,4 @@
-import express, { Express, Request, Response , Application } from 'express';
+import express, { Express, Request, Response , Application, NextFunction } from 'express';
 import dotenv from 'dotenv';
 import { errorHandler } from './src/middleware/error.middleware';
 import vcRoutes from './src/routes/vc.routes';

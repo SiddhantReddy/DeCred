@@ -7,5 +7,6 @@ const router = express.Router();
 router.post('/request/:type', vcController.requestVC);
 router.post('/process/:type', vcController.processCredentialRequest);
 router.get('/unfulfilled/:type', vcController.getUnfulfilledRequests);
+router.get('/search/:type', vcController.serachCredential);
 
 export default router;

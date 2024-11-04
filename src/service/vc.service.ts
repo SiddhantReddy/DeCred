@@ -1,6 +1,7 @@
 import { LinkedCredential, TruvityClient, VcClaim, VcContext, VcDecorator, VcLinkedCredentialClaim, VcNotEmptyClaim} from '@truvity/sdk';
 import { CredentialType, CredentialTypeMap, PassportRequest, PassportResponse, VcValidators } from '../credentials';
 import { Claims } from '@truvity/sdk/documents/types';
+import { ResourceCredential } from '@truvity/sdk/api';
 
 const issuerClient = new TruvityClient({
     environment: "https://api.truvity.cloud",
@@ -74,12 +75,21 @@ export async function requestVC<T extends CredentialType>(
         console.log(`${type} request VC sent to issuer`);
     } catch (error) {
         console.error(`Error during ${type} request:`, error);
+        throw new Error(`Error during ${type} request: ${error.message}`);
     }
 }
 
 export async function getUnfulfilledRequest<T extends CredentialType>(
-    type: T, request: VcDecorator<Claims>, response: VcDecorator<Claims>,
+    type: T
 ): Promise<any[]> {
+
+    // --- Issuer handles request ---
+    const credentialClassRequest = credentialClassMapRequest[type];
+    const credentialClassResponse = credentialClassMapResponse[type];
+
+    // Instantiating document APIs
+    const request = issuerClient.createVcDecorator(credentialClassRequest);
+    const response = issuerClient.createVcDecorator(credentialClassResponse);
 
     // Searching for tickets purchase request VCs
     const purchaseRequestResults = await issuerClient.credentials.credentialSearch({
@@ -152,6 +162,59 @@ export async function issueCredential<T extends CredentialType>(
 
 }
 
+export async function getIssuedCredential<T extends CredentialType>(
+    type: T
+): Promise<any[]> {
+    // Processing new requests
+    try {
+        // --- Issuer handles request ---
+        const credentialClassResponse = credentialClassMapResponse[type];
+
+        // Instantiating document APIs
+        const response = issuerClient.createVcDecorator(credentialClassResponse);
+        const result = await receiverClient.credentials.credentialSearch({
+            sort: [
+                {
+                field: 'DATA_VALID_FROM', // applying sort by date so that the newest ticket will be first
+                    order: 'DESC',
+                },
+            ],
+            filter: [
+                {
+                    data: {
+                        type: {
+                            operator: 'IN',
+                            values: [response.getCredentialTerm()],
+                        },
+                    },
+                },
+            ],
+        });
+        console.log('getIssued Credential responses found:', result.items.length);
+    //     console.log('getIssued Credential responses found:', result.items);
+
+        const dataOnlyWithClaims = await Promise.all(
+            result.items.map(async (item: ResourceCredential) => {
+                const credentialResponseVc = response.map(item);
+                const credentialClaims = await credentialResponseVc.getClaims();
+                
+                // Dereference and get claims specific to this item
+                const purchasedTicketVc = await credentialClaims.request.dereference();
+                const requestClaim = await purchasedTicketVc.getClaims();
+        
+                // Return the combined data
+                return {
+                    ...item.data,
+                    requestClaim: requestClaim, // Add unique `requestClaim` to each item
+                };
+            })
+        );
+        return dataOnlyWithClaims;
+    } catch (error) {
+        console.error('Error during getIssuedCredential request:', error);
+    }
+}
+
 export async function processCredentialRequest<T extends CredentialType>(
     type: T
 ): Promise<void>  {
@@ -168,50 +231,13 @@ export async function processCredentialRequest<T extends CredentialType>(
         const issuerKey = await generateKey(issuerClient);
         console.log('Issuer key generated:', issuerKey.id);
 
-        const unfulfilledRequests = await getUnfulfilledRequest(type, request, response);
+        const unfulfilledRequests = await getUnfulfilledRequest(type);
         issueCredential(type, unfulfilledRequests, issuerKey.id, request, response);
 
     } catch (error) {
         console.error('Error during Issuer handling request:', error);
+        throw new Error(`Error during ${type} request: ${error.message}`);
     }
-//     try {
-//         // Tim handles the received request
-
-//         const purchaseResponse = receiverClient.createVcDecorator(PurchaseResponse);
-
-//         const result = await receiverClient.credentials.credentialSearch({
-//             sort: [
-//                 {
-//                 field: 'DATA_VALID_FROM', // applying sort by date so that the newest ticket will be first
-//                     order: 'DESC',
-//                 },
-//             ],
-//             filter: [
-//                 {
-//                     data: {
-//                         type: {
-//                             operator: 'IN',
-//                             values: [purchaseResponse.getCredentialTerm()],
-//                         },
-//                     },
-//                 },
-//             ],
-//         });
-//         console.log('Purchase responses found:', result.items.length);
-
-//     // Converting the first API resource from the search result to UDT to enable additional API for working with the content of the VC
-//         const purchaseResponseVc = purchaseResponse.map(result.items[0]);
-//         const responseClaims = await purchaseResponseVc.getClaims();
-
-//     // Dereferencing the link to a credential to enable working with its content
-//         const purchasedTicketVc = await responseClaims.ticket.dereference();
-//         const ticketClaims = await purchasedTicketVc.getClaims();
-
-//     // Completing the demo
-//         console.info(`Last ticket flight number: ${ticketClaims.flightNumber} (price: $${responseClaims.price})`);
-//     } catch (error) {
-//         console.error('Error during Tim handles request:', error);
-//     }
 }
 
 // Export types for use in other files

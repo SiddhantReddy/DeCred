@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { CredentialType } from '../credentials';
-import { requestVC, processCredentialRequest, getUnfulfilledRequest } from '../service/vc.service';
+import { requestVC, processCredentialRequest, getUnfulfilledRequest, getIssuedCredential } from '../service/vc.service';
 
 export const vcController = {
     // Request a new VC
@@ -8,6 +8,7 @@ export const vcController = {
         try {
             const type = req.params.type as CredentialType;
             const params = req.body;
+            console.log("RequestVC: Request Params", params);
 
             await requestVC(type, params);
             
@@ -27,7 +28,7 @@ export const vcController = {
     processCredentialRequest: async (req: Request, res: Response) => {
         try {
             const type = req.params.type as CredentialType;
-            
+            console.log("processCredentialRequest: Request type", type);
             await processCredentialRequest(type);
             
             res.status(200).json({
@@ -49,12 +50,31 @@ export const vcController = {
             const request = req.body.request;
             const response = req.body.response;
             
-            const unfulfilledRequests = await getUnfulfilledRequest(type, request, response);
+            const unfulfilledRequests = await getUnfulfilledRequest(type);
             
             res.status(200).json({
                 success: true,
                 data: unfulfilledRequests,
                 count: unfulfilledRequests.length
+            });
+        } catch (error: any) {
+            res.status(400).json({
+                success: false,
+                message: error.message || `Error getting unfulfilled ${req.params.type} requests`
+            });
+        }
+    },
+
+    // Get unfulfilled requests
+    serachCredential: async (req: Request, res: Response) => {
+        try {
+            const type = req.params.type as CredentialType;     
+            const credentials = await getIssuedCredential(type);
+            
+            res.status(200).json({
+                success: true,
+                data: credentials,
+                count: credentials.length
             });
         } catch (error: any) {
             res.status(400).json({
