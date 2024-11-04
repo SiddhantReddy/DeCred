@@ -1,6 +1,5 @@
 import { LinkedCredential, TruvityClient, VcClaim, VcContext, VcLinkedCredentialClaim, VcNotEmptyClaim} from '@truvity/sdk';
-import { generateCredentialClasses } from './credentialSchemaGenerator';
-import { CredentialType, CredentialTypeMap, PassportRequest, VcValidators } from './credentials';
+import { CredentialType, CredentialTypeMap, PassportRequest, PassportResponse, VcValidators } from './credentials';
 
 const issuerClient = new TruvityClient({
     environment: "https://api.truvity.cloud",
@@ -130,19 +129,23 @@ type CredentialClassMap = {
     [key in CredentialType]: any; // Or a more specific type
 };
 
-const credentialClassMap: CredentialClassMap = {
+const credentialClassMapRequest: CredentialClassMap = {
     passport: PassportRequest,
 };
 
+const credentialClassMapResponse: CredentialClassMap = {
+    passport: PassportResponse,
+};
 
- async function generateReceiverKey() {
-    return await this.receiverClient.keys.keyGenerate({
+
+ async function generateKey(client: TruvityClient) {
+    return await client.keys.keyGenerate({
         data: { type: 'ED25519' }
     });
 }
 
 async function getIssuerDid() {
-    return await this.issuerClient.dids.didDocumentSelfGet();
+    return await issuerClient.dids.didDocumentSelfGet();
 }
 
 async function requestVC<T extends CredentialType>(
@@ -150,66 +153,57 @@ async function requestVC<T extends CredentialType>(
     params: CredentialTypeMap[T]['params']
 ): Promise<void> {
     try {
-        // Retrieving a well-known DID of the Issuer from its DID Document
 
+        // Validate parameters using the appropriate validator
         const validator = VcValidators[type];
         validator(params as any);
 
-        const { id: issuerDid } = await this.getIssuerDid();
+        // Get the credential class
+        const credentialClass = credentialClassMapRequest[type];
+
+        // Get issuer DID
+        const { id: issuerDid } = await getIssuerDid();
         console.log(`${type} Issuer DID:`, issuerDid);
 
-        const credentialClass = credentialClassMap[type];
+        // Create VC decorator
+        const vcDecorator = receiverClient.createVcDecorator(credentialClass);
+        console.log(`${type} request VC created`);
 
-        // --- Receiver initiate request ---
-        const purchaseRequest = receiverClient.createVcDecorator(credentialClass);
-        console.log('Purchase request VC created');
+        // Create draft
+        const requestDraft = await vcDecorator.create({ claims: params });
+        console.log(`${type} request draft created`);
 
-        const purchaseRequestDraft = await purchaseRequest.create({
-            claims: {
-            firstName: 'Siddhant',
-            lastName: 'Reddy',
-            },
-        });
-        console.log('Purchase request draft created :: ', purchaseRequestDraft);
-
-        const receiverKey = await receiverClient.keys.keyGenerate({
-            data: {
-                type: 'ED25519',
-            },
-        });
+        // Generate key and issue VC
+        const receiverKey = await generateKey(receiverClient);
         console.log('Receiver key generated:', receiverKey.id);
 
-        const purchaseRequestVc = await purchaseRequestDraft.issue(receiverKey.id);
-        console.log('Purchase request VC issued');
+        const requestVc = await requestDraft.issue(receiverKey.id);
+        console.log(`${type} request VC issued`);
 
-        await purchaseRequestVc.send(issuerDid, receiverKey.id);
-        console.log('Purchase request VC sent to issuer');
+        // Send VC
+        await requestVc.send(issuerDid, receiverKey.id);
+        console.log(`${type} request VC sent to issuer`);
     } catch (error) {
-        console.error('Error during holder initiate request:', error);
+        console.error(`Error during ${type} request:`, error);
     }
 }
 
-requestVC('passport', {
-    passportNumber: 'A123456',
-    issuingCountry: 'USA',
-    expiryDate: '2025-12-31'
-});
-
-async function main() {
+async function main<T extends CredentialType>(
+    type: T
+): Promise<void>  {
     try {
         // --- Issuer handles request ---
 
-        // Instantiating document APIs
-        const purchaseRequest = issuerClient.createVcDecorator(TicketPurchaseRequest);
-        const purchasedTicked = issuerClient.createVcDecorator(PurchasedTicked);
-        const purchaseResponse = issuerClient.createVcDecorator(PurchaseResponse);
+        const credentialClassRequest = credentialClassMapRequest[type];
+        const credentialClassResponse = credentialClassMapResponse[type];
 
-        // Generating a new cryptographic key pair for the Airline
-        const issuerKey = await issuerClient.keys.keyGenerate({
-            data: {
-                type: 'ED25519',
-            },
-        });
+        // Instantiating document APIs
+        const request = issuerClient.createVcDecorator(credentialClassRequest);
+        const purchasedTicked = issuerClient.createVcDecorator(PurchasedTicked);
+        const response = issuerClient.createVcDecorator(credentialClassResponse);
+
+        // Generate key and issue VC
+        const issuerKey = await generateKey(issuerClient);
         console.log('Issuer key generated:', issuerKey.id);
 
         // Searching for tickets purchase request VCs
@@ -219,7 +213,7 @@ async function main() {
                     data: {
                         type: {
                             operator: 'IN',
-                            values: [purchaseRequest.getCredentialTerm()],
+                            values: [request.getCredentialTerm()],
                         },
                     },
                 },
@@ -234,7 +228,7 @@ async function main() {
                     data: {
                         type: {
                             operator: 'IN',
-                            values: [purchaseResponse.getCredentialTerm()],
+                            values: [response.getCredentialTerm()],
                         },
                     },
                 },
@@ -257,36 +251,19 @@ async function main() {
         // Processing new requests
         for (const item of unfulfilledRequests) {
         // Converting API resource to UDT to enable additional API for working with the content of the VC
-            const purchaseRequestVc = purchaseRequest.map(item);
+            const requestVC = request.map(item);
 
-            let price = 100;
-            const { firstName } = await purchaseRequestVc.getClaims();
-
-        // Performing some custom business logic based on the VC content
-            if (firstName === 'Tim') {
-                price += 20; // Unlucky Tim...
-            }
-
-            const ticketDraft = await purchasedTicked.create({
+            const responseDraft = await response.create({
                 claims: {
-                    flightNumber: '123',
-                },
-            });
-            const ticketVc = await ticketDraft.issue(issuerKey.id);
-
-            const responseDraft = await purchaseResponse.create({
-                claims: {
-                    request: purchaseRequestVc,
-                    ticket: ticketVc,
-                    price,
+                    request: requestVC,
                 },
             });
             const responseVc = await responseDraft.issue(issuerKey.id);
 
-            const presentation = await issuerClient.createVpDecorator().issue([ticketVc, responseVc], issuerKey.id);
+            const presentation = await issuerClient.createVpDecorator().issue([responseVc], issuerKey.id);
 
         // Retrieving information about the issuer of the request. We'll use to send the response back
-            const { issuer: requesterDid } = await purchaseRequestVc.getMetaData();
+            const { issuer: requesterDid } = await requestVC.getMetaData();
             console.log('Requester DID:', requesterDid);
 
             await presentation.send(requesterDid, issuerKey.id);
@@ -295,54 +272,55 @@ async function main() {
     } catch (error) {
         console.error('Error during Airline handling request:', error);
     }
+//     try {
+//         // Tim handles the received request
 
-    try {
-        // Tim handles the received request
+//         const purchaseResponse = receiverClient.createVcDecorator(PurchaseResponse);
 
-        const purchaseResponse = receiverClient.createVcDecorator(PurchaseResponse);
+//         const result = await receiverClient.credentials.credentialSearch({
+//             sort: [
+//                 {
+//                 field: 'DATA_VALID_FROM', // applying sort by date so that the newest ticket will be first
+//                     order: 'DESC',
+//                 },
+//             ],
+//             filter: [
+//                 {
+//                     data: {
+//                         type: {
+//                             operator: 'IN',
+//                             values: [purchaseResponse.getCredentialTerm()],
+//                         },
+//                     },
+//                 },
+//             ],
+//         });
+//         console.log('Purchase responses found:', result.items.length);
 
-        const result = await receiverClient.credentials.credentialSearch({
-            sort: [
-                {
-                field: 'DATA_VALID_FROM', // applying sort by date so that the newest ticket will be first
-                    order: 'DESC',
-                },
-            ],
-            filter: [
-                {
-                    data: {
-                        type: {
-                            operator: 'IN',
-                            values: [purchaseResponse.getCredentialTerm()],
-                        },
-                    },
-                },
-            ],
-        });
-        console.log('Purchase responses found:', result.items.length);
+//     // Converting the first API resource from the search result to UDT to enable additional API for working with the content of the VC
+//         const purchaseResponseVc = purchaseResponse.map(result.items[0]);
+//         const responseClaims = await purchaseResponseVc.getClaims();
 
-    // Converting the first API resource from the search result to UDT to enable additional API for working with the content of the VC
-        const purchaseResponseVc = purchaseResponse.map(result.items[0]);
-        const responseClaims = await purchaseResponseVc.getClaims();
+//     // Dereferencing the link to a credential to enable working with its content
+//         const purchasedTicketVc = await responseClaims.ticket.dereference();
+//         const ticketClaims = await purchasedTicketVc.getClaims();
 
-    // Dereferencing the link to a credential to enable working with its content
-        const purchasedTicketVc = await responseClaims.ticket.dereference();
-        const ticketClaims = await purchasedTicketVc.getClaims();
-
-    // Completing the demo
-        console.info(`Last ticket flight number: ${ticketClaims.flightNumber} (price: $${responseClaims.price})`);
-    } catch (error) {
-        console.error('Error during Tim handles request:', error);
-    }
+//     // Completing the demo
+//         console.info(`Last ticket flight number: ${ticketClaims.flightNumber} (price: $${responseClaims.price})`);
+//     } catch (error) {
+//         console.error('Error during Tim handles request:', error);
+//     }
 }
 
-// main();
+
+requestVC('passport', {
+    passportNumber: 'A123456',
+    issuingCountry: 'USA',
+    expiryDate: '2025-12-31'
+});
+
+main('passport');
 
 
-// const [treq, tic, tres] = generateCredentialClasses(['ticketPurchaseRequest', 'ticket', 'ticketPurchaseResponse']);
-
-// console.log("ticket req :: ", treq);
-// console.log("ticket :: ", tic);
-// console.log("ticket res :: ", tres);
 
 
